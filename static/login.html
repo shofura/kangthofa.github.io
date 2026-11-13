@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Login - MSISDN Checker</title>
+<style>
+  :root { --bg:#f5f6f8; --card:#fff; --text:#1c2230; --muted:#6b7385; --line:#e3e6ec; --accent:#2457d6; --bad:#b42318; --warn:#9a6700; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#12151c; --card:#1b2029; --text:#e8ebf2; --muted:#9099ad; --line:#2a3140; --accent:#6b93ff; --bad:#ff7b72; --warn:#e3b341; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center; font-family:system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--bg); color:var(--text); }
+  form { width:100%; max-width:360px; margin:20px; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:28px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  p { margin:0 0 20px; color:var(--muted); font-size:14px; }
+  label { display:block; font-size:13px; color:var(--muted); margin:14px 0 6px; }
+  input { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--text); font-size:15px; }
+  input:focus { outline:2px solid var(--accent); outline-offset:-1px; }
+  button { width:100%; margin-top:20px; background:var(--accent); color:#fff; border:0; border-radius:8px; padding:11px; font-size:15px; font-weight:600; cursor:pointer; }
+  button:disabled { opacity:.5; }
+  #err { color:var(--bad); font-size:14px; margin-top:14px; min-height:18px; }
+  #info { color:var(--warn); font-size:14px; margin-bottom:12px; }
+</style>
+</head>
+<body>
+<form id="f">
+  <h1>MSISDN Checker</h1>
+  <p>Masuk untuk melanjutkan.</p>
+  <div id="info"></div>
+  <label for="u">Username</label>
+  <input id="u" name="username" autocomplete="username" autofocus required>
+  <label for="p">Password</label>
+  <input id="p" name="password" type="password" autocomplete="current-password" required>
+  <label for="c">Kode captcha</label>
+  <div style="display:flex;gap:8px;align-items:center">
+    <img id="cimg" alt="captcha" width="170" height="60" style="border:1px solid var(--line);border-radius:8px;background:#fff">
+    <button id="cref" type="button" title="Ganti gambar" style="width:auto;margin:0;padding:8px 12px;background:transparent;color:var(--accent);border:1px solid var(--accent)">&#8635;</button>
+  </div>
+  <input id="c" name="captcha_answer" autocomplete="off" autocapitalize="characters" placeholder="Ketik huruf pada gambar" required style="margin-top:8px">
+  <input id="cid" name="captcha_id" type="hidden">
+  <button id="b" type="submit">Masuk</button>
+  <div id="err"></div>
+</form>
+<script>
+  if (new URLSearchParams(location.search).get('expired'))
+    document.getElementById('info').textContent = 'Sesi berakhir karena tidak ada aktivitas 10 menit. Silakan login kembali.';
+  async function loadCaptcha() {
+    document.getElementById('c').value = '';
+    try {
+      const d = await (await fetch('/api/captcha')).json();
+      document.getElementById('cid').value = d.id;
+      document.getElementById('cimg').src = d.image;
+    } catch (_) { document.getElementById('err').textContent = 'Captcha gagal dimuat, refresh halaman.'; }
+  }
+  document.getElementById('cref').onclick = loadCaptcha;
+  loadCaptcha();
+  document.getElementById('f').onsubmit = async e => {
+    e.preventDefault();
+    const b = document.getElementById('b'), err = document.getElementById('err');
+    err.textContent = ''; b.disabled = true;
+    try {
+      const res = await fetch('/api/login', { method:'POST', body:new URLSearchParams(new FormData(e.target)) });
+      let d = {}; try { d = await res.json(); } catch (_) {}
+      if (!res.ok) throw new Error(d.detail || 'Gagal login (' + res.status + ')');
+      location.href = '/';
+    } catch (x) {
+      err.textContent = x.message; b.disabled = false;
+      document.getElementById('p').value = ''; loadCaptcha();
+    }
+  };
+</script>
+</body>
+</html>

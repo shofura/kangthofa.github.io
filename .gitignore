@@ -1,0 +1,18 @@
+# Data sensitif - JANGAN PERNAH masuk ke GitHub
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite
+*.sqlite3
+*.csv
+raw_msisdn/
+
+# Token / konfigurasi rahasia
+start_server.bat
+.env
+*.env
+
+# File sementara
+__pycache__/
+*.pyc

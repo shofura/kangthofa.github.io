@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MSISDN Checker</title>
+<style>
+  :root { --bg:#f5f6f8; --card:#fff; --text:#1c2230; --muted:#6b7385; --line:#e3e6ec; --accent:#2457d6; --ok:#117a45; --bad:#b42318; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#12151c; --card:#1b2029; --text:#e8ebf2; --muted:#9099ad; --line:#2a3140; --accent:#6b93ff; --ok:#4cc38a; --bad:#ff7b72; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--text); }
+  main { max-width:1100px; margin:0 auto; padding:32px 20px 60px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  p.sub { margin:0 0 24px; color:var(--muted); font-size:14px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px; margin-bottom:20px; }
+  #drop { border:2px dashed var(--line); border-radius:10px; padding:28px; text-align:center; color:var(--muted); cursor:pointer; transition:.15s; }
+  #drop.over { border-color:var(--accent); color:var(--accent); }
+  #drop strong { color:var(--text); }
+  textarea { width:100%; min-height:90px; margin-top:14px; padding:10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--text); font-family:ui-monospace, Menlo, Consolas, monospace; font-size:13px; resize:vertical; }
+  .row { display:flex; align-items:center; gap:16px; margin-top:14px; flex-wrap:wrap; }
+  label.chk { font-size:14px; display:flex; gap:8px; align-items:center; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:8px; padding:10px 20px; font-size:14px; font-weight:600; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:default; }
+  button.ghost { background:transparent; color:var(--accent); border:1px solid var(--accent); }
+  #files { font-size:13px; color:var(--muted); margin-top:10px; }
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-bottom:16px; }
+  .stat { border:1px solid var(--line); border-radius:10px; padding:12px; }
+  .stat b { display:block; font-size:22px; }
+  .stat span { font-size:12px; color:var(--muted); }
+  .tablewrap { overflow-x:auto; border:1px solid var(--line); border-radius:8px; }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  th, td { padding:8px 12px; text-align:left; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th { background:var(--bg); color:var(--muted); font-weight:600; position:sticky; top:0; }
+  .FOUND { color:var(--ok); font-weight:600; }
+  .NF { color:var(--bad); font-weight:600; }
+  #err { color:var(--bad); margin-top:12px; font-size:14px; }
+  .note { font-size:12px; color:var(--muted); margin-top:10px; }
+</style>
+</head>
+<body>
+<main>
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+    <h1>MSISDN Checker</h1>
+    <div style="font-size:13px;color:var(--muted)"><span id="who"></span> <button id="chpw" class="ghost" type="button" style="padding:6px 12px;margin-left:8px">Ganti password</button><button id="logout" class="ghost" type="button" style="padding:6px 12px;margin-left:8px">Logout</button></div>
+  </div>
+  <p class="sub">Upload CSV berisi MSISDN, hasil berupa ga_date, ga_outlet, ga_outlet_program, ga_site_id, ga_site_branch, first_tag_id, latest_tag_id.</p>
+
+  <div class="card">
+    <div id="drop">
+      <div><strong>Tarik file CSV ke sini</strong> atau klik untuk memilih (bisa lebih dari satu)</div>
+      <div style="font-size:12px;margin-top:6px">MSISDN di kolom pertama. Format 08xx, 628xx, +628xx, atau 8xx otomatis dinormalisasi.</div>
+      <input id="file" type="file" accept=".csv,.txt" multiple hidden>
+    </div>
+    <div id="files"></div>
+    <textarea id="text" placeholder="Atau tempel MSISDN di sini, satu per baris"></textarea>
+    <div class="row">
+      <label class="chk"><input type="checkbox" id="latest"> Hanya ambil data terbaru per MSISDN (berdasarkan ga_date)</label>
+    </div>
+    <div class="row">
+      <button id="go">Cek sekarang</button>
+      <button id="reset" class="ghost" type="button">Reset</button>
+    </div>
+    <div id="err"></div>
+  </div>
+
+  <div class="card" id="result" hidden>
+    <div class="stats" id="stats"></div>
+    <div class="row" style="margin:0 0 14px"><button id="dl">Unduh hasil (CSV)</button></div>
+    <div class="tablewrap"><table><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
+    <div class="note" id="note"></div>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let selected = [];
+let downloadId = null;
+
+const drop = $('drop'), fileInput = $('file');
+drop.onclick = () => fileInput.click();
+fileInput.onchange = () => addFiles(fileInput.files);
+drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
+drop.ondragleave = () => drop.classList.remove('over');
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); addFiles(e.dataTransfer.files); };
+
+function addFiles(list) {
+  selected = selected.concat(Array.from(list));
+  renderFiles();
+}
+function renderFiles() {
+  $('files').textContent = selected.length
+    ? selected.map(f => `${f.name} (${(f.size/1024).toFixed(1)} KB)`).join(' · ')
+    : '';
+}
+
+$('reset').onclick = () => {
+  selected = []; fileInput.value = ''; $('text').value = '';
+  $('err').textContent = ''; $('result').hidden = true; renderFiles();
+};
+
+$('go').onclick = async () => {
+  $('err').textContent = '';
+  if (!selected.length && !$('text').value.trim()) {
+    $('err').textContent = 'Pilih file CSV atau tempel MSISDN terlebih dahulu.';
+    return;
+  }
+  const fd = new FormData();
+  selected.forEach(f => fd.append('files', f));
+  fd.append('text', $('text').value);
+  fd.append('latest', $('latest').checked);
+
+  $('go').disabled = true; $('go').textContent = 'Memproses...';
+  try {
+    const res = await fetch('/api/check', { method: 'POST', body: fd });
+    const body = await res.text();
+    let data = {};
+    try { data = JSON.parse(body); } catch (_) {}
+    if (res.status === 401) { location.href = '/login?expired=1'; return; }
+    if (res.status === 403) { location.href = '/change-password'; return; }
+    if (!res.ok) throw new Error(data.detail || ('Error server (' + res.status + '). Lihat pesan error di jendela command server.'));
+    render(data);
+  } catch (e) {
+    $('err').textContent = e.message;
+  } finally {
+    $('go').disabled = false; $('go').textContent = 'Cek sekarang';
+  }
+};
+
+function render(d) {
+  downloadId = d.download_id;
+  const nf = n => n.toLocaleString('id-ID');
+  $('stats').innerHTML = '';
+  [['Total input', d.total_input], ['MSISDN unik', d.unique], ['Ditemukan GA / Biometrik', d.found], ['Ada Program', d.with_program],
+   ['Tidak ditemukan', d.not_found]]
+    .forEach(([l, v]) => {
+      const s = document.createElement('div'); s.className = 'stat';
+      s.innerHTML = '<b></b><span></span>';
+      s.querySelector('b').textContent = nf(v);
+      s.querySelector('span').textContent = l;
+      $('stats').appendChild(s);
+    });
+
+  const thead = $('thead'), tbody = $('tbody');
+  thead.innerHTML = ''; tbody.innerHTML = '';
+  const tr = document.createElement('tr');
+  d.columns.forEach(c => { const th = document.createElement('th'); th.textContent = c; tr.appendChild(th); });
+  thead.appendChild(tr);
+  d.preview.forEach(row => {
+    const r = document.createElement('tr');
+    row.forEach((v, i) => {
+      const td = document.createElement('td');
+      td.textContent = v;
+      if (i === 1) td.className = v === 'FOUND' ? 'FOUND' : 'NF';
+      r.appendChild(td);
+    });
+    tbody.appendChild(r);
+  });
+  $('note').textContent = d.rows_out > d.preview.length
+    ? `Menampilkan ${d.preview.length} dari ${nf(d.rows_out)} baris. Unduh CSV untuk hasil lengkap.` : '';
+  $('result').hidden = false;
+  if (!d.program_db) $('note').textContent = 'Perhatian: outlet_program.db belum ada, kolom ga_outlet_program kosong. Jalankan import_outlet_program.py.';
+}
+
+$('dl').onclick = () => { if (downloadId) location.href = '/api/download/' + downloadId; };
+
+// ---- sesi & idle 10 menit ----
+const IDLE_MS = 10 * 60 * 1000;
+let lastActivity = Date.now(), lastPing = 0;
+['mousemove','keydown','click','scroll','touchstart'].forEach(ev =>
+  addEventListener(ev, () => { lastActivity = Date.now(); }, { passive: true }));
+async function ping() {
+  lastPing = Date.now();
+  try {
+    const r = await fetch('/api/session');
+    if (r.status === 401) return location.href = '/login?expired=1';
+    const d = await r.json(); if (d.must_change) return location.href = '/change-password'; $('who').textContent = d.user;
+  } catch (_) {}
+}
+ping();
+setInterval(() => {
+  const now = Date.now();
+  if (now - lastActivity >= IDLE_MS) {
+    fetch('/api/logout', { method: 'POST' }).finally(() => location.href = '/login?expired=1');
+  } else if (lastActivity > lastPing && now - lastPing > 60000) {
+    ping();  // ada aktivitas sejak ping terakhir -> perpanjang sesi di server
+  }
+}, 5000);
+$('chpw').onclick = () => location.href = '/change-password';
+$('logout').onclick = () => fetch('/api/logout', { method: 'POST' }).finally(() => location.href = '/login');
+</script>
+</body>
+</html>
